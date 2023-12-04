@@ -1,6 +1,12 @@
-use itertools::Itertools;
-
-type Str = &'static str;
+use nom::{
+    bytes::complete::{tag, take_till},
+    character::complete::{char, digit1, newline},
+    combinator::{all_consuming, map_res},
+    error::VerboseError,
+    multi::{many1, separated_list1},
+    sequence::{preceded, terminated, tuple},
+    Err,
+};
 
 fn main() {
     let input = include_str!("input.txt");
@@ -9,56 +15,69 @@ fn main() {
     part2(input);
 }
 
-fn part1(input: Str) {
-    let count: i32 = input
-        .lines()
-        .map(|l| {
-            let t = l
-                .split(',')
-                .map(|p| {
-                    p.split('-')
-                        .map(str::parse::<i32>)
-                        .map(Result::unwrap)
-                        .next_tuple::<(_, _)>()
-                        .unwrap()
-                })
-                .next_tuple::<(_, _)>()
-                .unwrap();
-            if ((t.0 .1 - t.1 .1).signum() + (t.0 .0 - t.1 .0).signum()).abs() < 2 {
-                1
-            } else {
-                0
-            }
-        })
-        .sum();
+fn part1(input: &str) {
+    let input = parse(input).unwrap();
+    let mut sum = 0;
 
-    println!("Count is {count}");
+    for (_, winning, nums) in input {
+        let mut count = 0;
+        for num in nums {
+            if winning.contains(&num) {
+                count += 1;
+            }
+        }
+        if count != 0 {
+            sum += 2u32.pow(count - 1);
+        }
+    }
+
+    println!("Sum: {sum}");
 }
 
-fn part2(input: Str) {
-    let count: i32 = input
-        .lines()
-        .map(|l| {
-            let t = l
-                .split(',')
-                .map(|p| {
-                    p.split('-')
-                        .map(str::parse::<i32>)
-                        .map(Result::unwrap)
-                        .next_tuple::<(_, _)>()
-                        .unwrap()
-                })
-                .next_tuple::<(_, _)>()
-                .unwrap();
-            let first = ((1u128 << (t.0 .1 + 1)) - 1) ^ ((1u128 << t.0 .0) - 1);
-            let second = ((1u128 << (t.1 .1 + 1)) - 1) ^ ((1u128 << t.1 .0) - 1);
-            if first ^ second != first + second {
-                1
-            } else {
-                0
-            }
-        })
-        .sum();
+fn part2(input: &str) {
+    let input = parse(input).unwrap();
+    let mut copies = vec![1; input.len()];
 
-    println!("Count is {count}");
+    for (id, winning, nums) in input {
+        let mut count = 0;
+        for num in nums {
+            if winning.contains(&num) {
+                count += 1;
+            }
+        }
+        for i in 0..count {
+            if count >= copies.len() {
+                break;
+            }
+
+            copies[i + id as usize] += copies[id as usize - 1];
+        }
+    }
+
+    let sum: u32 = copies.iter().sum();
+    println!("Sum: {sum}");
+}
+
+fn parse(input: &str) -> Result<Vec<(u32, Vec<u32>, Vec<u32>)>, Err<VerboseError<&str>>> {
+    all_consuming(separated_list1(
+        newline,
+        tuple((
+            preceded(
+                take_till(|c: char| c.is_numeric()),
+                map_res(digit1, str::parse),
+            ),
+            preceded(
+                take_till(|c: char| c.is_numeric()),
+                terminated(
+                    separated_list1(many1(char(' ')), map_res(digit1, str::parse)),
+                    tag(" |"),
+                ),
+            ),
+            preceded(
+                many1(char(' ')),
+                separated_list1(many1(char(' ')), map_res(digit1, str::parse)),
+            ),
+        )),
+    ))(input)
+    .map(|r| r.1)
 }
