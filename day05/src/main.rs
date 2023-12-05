@@ -1,8 +1,15 @@
-use std::collections::VecDeque;
-
 use itertools::Itertools;
-
-type Str = &'static str;
+use nom::{
+    branch::alt,
+    bytes::complete::{tag, take, take_till, take_till1, take_until},
+    character::complete::{char, digit1, newline},
+    combinator::{all_consuming, eof, flat_map, map, map_parser, map_res, opt},
+    error::{context, convert_error, VerboseError},
+    multi::{count, many1, many_till, separated_list0, separated_list1},
+    sequence::{preceded, terminated, tuple},
+    Err,
+};
+use std::ops::Range;
 
 fn main() {
     let input = include_str!("input.txt");
@@ -11,98 +18,64 @@ fn main() {
     part2(input);
 }
 
-fn part1(input: Str) {
-    let mut lines = input.lines().peekable();
-    let len = (lines.peek().unwrap().len() + 1) / 4;
-    let mut stacks: Vec<VecDeque<char>> = Vec::with_capacity(len);
-    for _ in 0..len {
-        stacks.push(VecDeque::new());
-    }
-    // Get stack initial state
-    for line in &mut lines {
-        if line == "" {
-            break;
-        }
+fn part1(input: &str) {
+    let (mut seeds, steps) = parse(input).unwrap();
 
-        let chars = line.as_bytes();
-        for i in 0..len {
-            let ind = 1 + i * 4;
-            if chars[ind] != b' ' {
-                stacks[i].push_front(chars[ind] as char);
+    for step in steps {
+        for seed in &mut seeds {
+            for map in &step {
+                if map.0.contains(seed) {
+                    *seed = *seed + map.1.start - map.0.start;
+                    break;
+                }
             }
         }
     }
-    // Remove number from top of stack
-    for v in &mut stacks {
-        v.pop_front();
-    }
-    // Parse following lines
-    for line in &mut lines {
-        let (amount, from, to) = {
-            let words: Vec<_> = line
-                .split_ascii_whitespace()
-                .tuples()
-                .map(|(_, i)| i.parse::<usize>().unwrap())
-                .collect();
-            (words[0], words[1] - 1, words[2] - 1)
-        };
 
-        let l = stacks[from].len();
-        let mut temp = stacks[from].drain(l - amount..).rev().collect();
-        stacks[to].append(&mut temp);
-    }
-    // Get end
-    let mut output = String::new();
-    for mut stack in stacks {
-        output += &stack.pop_back().unwrap().to_string();
-    }
-    println!("Top elements are {output}");
+    println!("Min: {}", seeds.iter().min().unwrap());
 }
 
-fn part2(input: Str) {
-    let mut lines = input.lines().peekable();
-    let len = (lines.peek().unwrap().len() + 1) / 4;
-    let mut stacks: Vec<VecDeque<char>> = Vec::with_capacity(len);
-    for _ in 0..len {
-        stacks.push(VecDeque::new());
-    }
-    // Get stack initial state
-    for line in &mut lines {
-        if line == "" {
-            break;
-        }
+fn part2(input: &str) {
+    let (mut seeds, steps) = parse(input).unwrap();
+    seeds = seeds
+        .into_iter()
+        .tuples()
+        .map(|(start, length)| start..(start + length))
+        .flatten()
+        .collect();
 
-        let chars = line.as_bytes();
-        for i in 0..len {
-            let ind = 1 + i * 4;
-            if chars[ind] != b' ' {
-                stacks[i].push_front(chars[ind] as char);
+    for step in steps {
+        for seed in &mut seeds {
+            for map in &step {
+                if map.0.contains(seed) {
+                    *seed = *seed + map.1.start - map.0.start;
+                    break;
+                }
             }
         }
     }
-    // Remove number from top of stack
-    for v in &mut stacks {
-        v.pop_front();
-    }
-    // Parse following lines
-    for line in &mut lines {
-        let (amount, from, to) = {
-            let words: Vec<_> = line
-                .split_ascii_whitespace()
-                .tuples()
-                .map(|(_, i)| i.parse::<usize>().unwrap())
-                .collect();
-            (words[0], words[1] - 1, words[2] - 1)
-        };
 
-        let l = stacks[from].len();
-        let mut temp = stacks[from].drain(l - amount..).collect();
-        stacks[to].append(&mut temp);
-    }
-    // Get end
-    let mut output = String::new();
-    for mut stack in stacks {
-        output += &stack.pop_back().unwrap().to_string();
-    }
-    println!("Top elements are {output}");
+    println!("Min: {}", seeds.iter().min().unwrap());
+}
+
+fn parse(
+    input: &str,
+) -> Result<(Vec<u64>, Vec<Vec<(Range<u64>, Range<u64>)>>), Err<VerboseError<&str>>> {
+    all_consuming(tuple((
+        preceded(
+            tag("seeds: "),
+            separated_list1(char(' '), map_res(digit1, str::parse)),
+        ),
+        many1(preceded(
+            take_till1(|c: char| c.is_numeric()),
+            many1(map(
+                count(
+                    terminated(map_res(digit1, str::parse), alt((take(1usize), eof))),
+                    3,
+                ),
+                |c| (c[1]..(c[1] + c[2]), c[0]..(c[0] + c[2])),
+            )),
+        )),
+    )))(input)
+    .map(|r| r.1)
 }
