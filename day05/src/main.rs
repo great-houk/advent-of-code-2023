@@ -1,11 +1,11 @@
 use itertools::Itertools;
 use nom::{
     branch::alt,
-    bytes::complete::{tag, take, take_till, take_till1, take_until},
-    character::complete::{char, digit1, newline},
-    combinator::{all_consuming, eof, flat_map, map, map_parser, map_res, opt},
-    error::{context, convert_error, VerboseError},
-    multi::{count, many1, many_till, separated_list0, separated_list1},
+    bytes::complete::{tag, take, take_till1},
+    character::complete::{char, digit1},
+    combinator::{all_consuming, eof, map, map_res},
+    error::VerboseError,
+    multi::{count, many1, separated_list1},
     sequence::{preceded, terminated, tuple},
     Err,
 };
