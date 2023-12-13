@@ -1,155 +1,163 @@
-use std::ops::AddAssign;
+use std::collections::{HashMap, HashSet};
 
-use colored::*;
-use itertools::Itertools;
-
-type Str = &'static str;
+use nom::{
+    branch::alt,
+    bytes::complete::{take, take_till},
+    character::complete::{char, newline},
+    combinator::{all_consuming, map},
+    error::VerboseError,
+    multi::{many1, separated_list1},
+    sequence::tuple,
+    Err,
+};
 
 fn main() {
-    let input = include_str!("sample.txt");
+    let input = include_str!("input.txt");
 
-    part1(input);
-    part1quick(input);
+    // part1(input);
     part2(input);
 }
 
-fn part1(input: Str) {
-    let mut trees = input
-        .lines()
-        .map(|l| {
-            l.chars()
-                .map(|c| (c.to_digit(10).unwrap() as i32, false))
-                .collect_vec()
-        })
-        .collect_vec();
+fn part1(input: &str) {
+    let (dirs, map) = parse(input).unwrap();
+    let dirs = dirs.into_iter().cycle();
 
-    let mut sum = 0;
-    for i in 0..trees.len() {
-        'next: for j in 0..trees[i].len() {
-            // Left
-            let mut min = -1;
-            for x in 0..j {
-                if trees[i][x].0 >= min {
-                    min = trees[i][x].0;
-                }
-            }
-            if trees[i][j].0 > min {
-                sum += 1;
-                trees[i][j].1 |= true;
-                continue 'next;
-            }
-            // Right
-            min = -1;
-            for x in (j + 1..trees[i].len()).rev() {
-                if trees[i][x].0 >= min {
-                    min = trees[i][x].0;
-                }
-            }
-            if trees[i][j].0 > min {
-                sum += 1;
-                trees[i][j].1 |= true;
-                continue 'next;
-            }
-            // Up
-            min = -1;
-            for y in 0..i {
-                if trees[y][j].0 >= min {
-                    min = trees[y][j].0;
-                }
-            }
-            if trees[i][j].0 > min {
-                sum += 1;
-                trees[i][j].1 |= true;
-                continue 'next;
-            }
-            // Down
-            min = -1;
-            for y in (i + 1..trees.len()).rev() {
-                if trees[y][j].0 >= min {
-                    min = trees[y][j].0;
-                }
-            }
-            if trees[i][j].0 > min {
-                sum += 1;
-                trees[i][j].1 |= true;
-                continue 'next;
-            }
+    let mut curr = "AAA";
+    let mut count = 0;
+    for dir in dirs {
+        if curr == "ZZZ" {
+            break;
         }
+
+        curr = match dir {
+            Dir::Left => map[curr].0,
+            Dir::Right => map[curr].1,
+        };
+        count += 1;
     }
 
-    for l in &trees {
-        for t in l {
-            if t.1 {
-                print!("{} ", t.0.to_string().green());
-            } else {
-                print!("{} ", t.0.to_string().red());
-            }
-        }
-        println!();
-    }
-
-    dbg!(sum);
+    println!("Count: {count}");
 }
 
-fn part2(input: Str) {
-    let trees = input
-        .lines()
-        .map(|l| {
-            l.chars()
-                .map(|c| c.to_digit(10).unwrap() as i32)
-                .collect_vec()
-        })
-        .collect_vec();
+fn part2(input: &str) {
+    let (dirs, map) = parse(input).unwrap();
+    let dirs = dirs.into_iter().enumerate().cycle();
 
-    let mut sum = 0;
-    for i in 0..trees.len() {
-        for j in 0..trees[i].len() {
-            // Left
-            let mut left = 0;
-            for x in (0..j).rev() {
-                if trees[i][x] < trees[i][j] {
-                    left += 1;
+    let mut currs: Vec<_> = map
+        .keys()
+        .cloned()
+        .filter(|s| s.as_bytes()[2] == 'A' as u8)
+        .map(|s| (s, HashMap::new(), None))
+        .collect();
+
+    let mut count = 0u128;
+    for (i, dir) in dirs {
+        let mut done = true;
+        for (curr, zees, loops) in &mut currs {
+            if loops.is_some() {
+                continue;
+            }
+
+            if curr.as_bytes()[2] == 'Z' as u8 {
+                if let Some(c) = zees.get(&(i, *curr)) {
+                    *loops = Some((count - c, (i, *curr)));
+                    continue;
                 } else {
-                    left += 1;
-                    break;
+                    zees.insert((i, *curr), count);
                 }
             }
-            // Right
-            let mut right = 0;
-            for x in j + 1..trees[i].len() {
-                if trees[i][x] < trees[i][j] {
-                    right += 1;
-                } else {
-                    right += 1;
-                    break;
+
+            *curr = match dir {
+                Dir::Left => map[*curr].0,
+                Dir::Right => map[*curr].1,
+            };
+            done = false;
+        }
+        if done {
+            break;
+        }
+
+        count += 1;
+    }
+    println!("Cycles");
+
+    let mut cycles: Vec<_> = currs
+        .into_iter()
+        .map(|(_, zees, l)| {
+            let l = l.unwrap();
+            let min = zees[&l.1];
+            let zees: Vec<_> = zees.into_values().filter(|&k| k >= min).collect();
+            (zees, l.0)
+        })
+        .collect();
+
+    let max = loop {
+        // println!("{cycles:?}");
+        let min = cycles
+            .iter()
+            .map(|(v, _)| *v.iter().min().unwrap())
+            .min()
+            .unwrap();
+
+        let mut val = 0;
+        for (vs, cycle) in &mut cycles {
+            for v in vs {
+                if *v == min {
+                    *v = *v + *cycle;
+                    val = *v;
                 }
-            }
-            // Up
-            let mut up = 0;
-            for y in (0..i).rev() {
-                if trees[y][j] < trees[i][j] {
-                    up += 1;
-                } else {
-                    up += 1;
-                    break;
-                }
-            }
-            // Down
-            let mut down = 0;
-            for y in i + 1..trees.len() {
-                if trees[y][j] < trees[i][j] {
-                    down += 1;
-                } else {
-                    down += 1;
-                    break;
-                }
-            }
-            // Sum
-            if up * down * left * right > sum {
-                sum = up * down * left * right;
             }
         }
-    }
 
-    dbg!(sum);
+        let mut done = true;
+        for (vs, _) in &cycles {
+            let mut found = false;
+            for v in vs {
+                if *v == val {
+                    found = true;
+                }
+            }
+            done &= found;
+        }
+
+        if done {
+            break val;
+        }
+    };
+
+    println!("Count: {max}");
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Dir {
+    Left,
+    Right,
+}
+
+fn parse(input: &str) -> Result<(Vec<Dir>, HashMap<&str, (&str, &str)>), Err<VerboseError<&str>>> {
+    all_consuming(tuple((
+        many1(alt((
+            map(char('L'), |_| Dir::Left),
+            map(char('R'), |_| Dir::Right),
+        ))),
+        take_till(|c: char| c.is_alphanumeric()),
+        map(
+            separated_list1(
+                newline,
+                map(
+                    tuple((
+                        take(3usize), // "AAA"
+                        take(4usize), // " = ("
+                        take(3usize), // "BBB"
+                        take(2usize), // ", "
+                        take(3usize), // "CCC"
+                        take(1usize), // ")"
+                    )),
+                    |(name, _, left, _, right, _)| (name, (left, right)),
+                ),
+            ),
+            |v| v.into_iter().collect(),
+        ),
+    )))(input)
+    .map(|(_, r)| (r.0, r.2))
 }

@@ -1,48 +1,63 @@
-use itertools::Itertools;
-
-type Str = &'static str;
+use nom::{
+    branch::alt,
+    bytes::complete::{take, take_till, take_till1},
+    character::complete::{char, digit1, newline},
+    combinator::{all_consuming, eof, map, map_res},
+    error::VerboseError,
+    multi::{count, many1},
+    sequence::{preceded, terminated, tuple},
+    Err,
+};
 
 fn main() {
-    let input = include_str!("sample.txt");
+    let input = include_str!("input.txt");
 
     part1(input);
     part2(input);
 }
 
-fn part1(input: Str) {
-    for line in input.lines() {
-        let v = line
-            .as_bytes()
-            .windows(4)
-            .enumerate()
-            .filter_map(|(i, w)| {
-                if (1..4).any(|j| w[j..].contains(&w[j - 1])) {
-                    None
-                } else {
-                    Some(i + 4)
-                }
-            })
-            .take(1)
-            .collect_vec()[0];
-        dbg!(v);
+fn part1(input: &str) {
+    let input = parse(input).unwrap();
+    let mut maxes = vec![];
+
+    for (t, d) in input {
+        let min = ((t - (t * t - 4.0 * d).sqrt()) / 2.0) as u64 + 1;
+        let max = ((t + (t * t - 4.0 * d).sqrt()) / 2.0).ceil() as u64 - 1;
+        maxes.push(max - min + 1);
     }
+
+    println!("Product: {}", maxes.iter().product::<u64>());
 }
 
-fn part2(input: Str) {
-    for line in input.lines() {
-        let v = line
-            .as_bytes()
-            .windows(14)
-            .enumerate()
-            .filter_map(|(i, w)| {
-                if (1..14).any(|j| w[j..].contains(&w[j - 1])) {
-                    None
-                } else {
-                    Some(i + 14)
-                }
-            })
-            .take(1)
-            .collect_vec()[0];
-        dbg!(v);
-    }
+fn part2(input: &str) {
+    let input = parse(input).unwrap();
+
+    let input = input
+        .into_iter()
+        .fold(("".to_string(), "".to_string()), |(a, b), (c, d)| {
+            (a + &(c as u64).to_string(), b + &(d as u64).to_string())
+        });
+    let (t, d): (f64, f64) = (input.0.parse().unwrap(), input.1.parse().unwrap());
+
+    let min = ((t - (t * t - 4.0 * d).sqrt()) / 2.0) as u64 + 1;
+    let max = ((t + (t * t - 4.0 * d).sqrt()) / 2.0).ceil() as u64 - 1;
+
+    println!("Count: {}", max - min + 1);
+}
+
+fn parse(input: &str) -> Result<Vec<(f64, f64)>, Err<VerboseError<&str>>> {
+    all_consuming(map(
+        tuple((
+            many1(preceded(
+                take_till1(|c: char| c.is_numeric() || c == '\n'),
+                map_res(digit1, str::parse),
+            )),
+            many1(preceded(
+                take_till1(|c: char| c.is_numeric()),
+                map_res(digit1, str::parse),
+            )),
+        )),
+        |(t, d)| t.into_iter().zip(d).collect(),
+    ))(input)
+    .map(|r| r.1)
 }
