@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use nom::{
     bytes::complete::tag,
     character::complete::{anychar, digit1, newline},
@@ -9,11 +7,12 @@ use nom::{
     sequence::{preceded, tuple},
     Err,
 };
+use std::collections::HashMap;
 
 fn main() {
-    let input = include_str!("sample.txt");
+    let input = include_str!("input.txt");
 
-    // part1(input);
+    part1(input);
     part2(input);
 }
 
@@ -87,28 +86,12 @@ fn part2(input: &str) {
             groups.extend(&copy);
         }
 
-        let mut hash = HashMap::new();
         let mut inds = vec![0; groups.len()];
         let mut ind = 0;
-        let mut count = 0;
+        let mut counts: Vec<Vec<((usize, usize), usize)>> = vec![vec![]; inds.len()];
+        let mut hash = HashMap::new();
 
-        'outer: loop {
-            if inds[ind] > line.len() - groups[ind] {
-                if ind == 0 {
-                    break;
-                } else {
-                    if let Some((Some(c), None)) = hash.get(&(ind, inds[ind - 1])) {
-                        hash.insert((ind, inds[ind - 1]), (Some(*c), Some(count)));
-                    } else {
-                        hash.insert((ind, inds[ind - 1]), (Some(count), None));
-                    }
-
-                    ind -= 1;
-                    inds[ind] += 1;
-                    continue;
-                }
-            }
-
+        let check_valid = |ind, inds: &Vec<usize>| {
             let start = if ind == 0 {
                 0
             } else {
@@ -119,61 +102,63 @@ fn part2(input: &str) {
             } else {
                 inds[ind] + groups[ind] + 1
             };
-
             for i in start..end {
-                let valid = if i >= inds[ind] && i < inds[ind] + groups[ind] {
-                    line[i] != 0
-                } else {
-                    i == line.len() || line[i] != 1
-                };
-
-                if !valid {
-                    inds[ind] += 1;
-                    continue 'outer;
+                if i >= inds[ind] && i < inds[ind] + groups[ind] {
+                    if line[i] == 0 {
+                        return false;
+                    }
+                } else if i < line.len() && line[i] == 1 {
+                    return false;
                 }
             }
+            true
+        };
 
-            if ind == inds.len() - 1 {
-                // let mut rep = vec!['.'; line.len()];
-                // for i in 0..inds.len() {
-                //     for j in 0..groups[i] {
-                //         rep[inds[i] + j] = '#';
-                //     }
-                // }
-                // for c in rep {
-                //     print!("{c}");
-                // }
-                // println!();
-
-                inds[ind] += 1;
-                count += 1;
-
-                if count % (1 << 20) == 0 {
-                    // print!("Count: {count}, Inds: [");
-                    // for ind in &inds {
-                    //     print!("{ind}, ");
-                    // }
-                    // println!("]");
-                }
-            } else if ind != 0 {
-                if let Some((Some(first), Some(second))) = hash.get(&(ind, inds[ind - 1])) {
-                    let c = second - first;
-                    count += c;
-
+        loop {
+            if inds[ind] + groups[ind] > line.len() {
+                if ind == 0 {
+                    break;
+                } else {
+                    hash.extend(counts[ind].drain(..));
                     ind -= 1;
                     inds[ind] += 1;
-                    // println!("Here!");
-                } else {
-                    inds[ind + 1] = inds[ind] + groups[ind] + 1;
-                    ind += 1;
+                    continue;
                 }
+            }
+            if !check_valid(ind, &inds) {
+                inds[ind] += 1;
             } else {
-                inds[ind + 1] = inds[ind] + groups[ind] + 1;
-                ind += 1;
+                // Check hash
+                if let Some(c) = hash.get(&(ind, inds[ind])) {
+                    for level in &mut counts {
+                        for ind in level {
+                            ind.1 += c;
+                        }
+                    }
+
+                    hash.extend(counts[ind].drain(..));
+                    ind -= 1;
+                    inds[ind] += 1;
+                } else {
+                    counts[ind].push(((ind, inds[ind]), 0));
+
+                    if ind == inds.len() - 1 {
+                        for level in &mut counts {
+                            for ind in level {
+                                ind.1 += 1;
+                            }
+                        }
+                        inds[ind] += 1;
+                    } else {
+                        inds[ind + 1] = inds[ind] + groups[ind] + 1;
+                        ind += 1;
+                    }
+                }
             }
         }
 
-        println!("{count}");
+        let count = counts[0][0].1;
+        // println!("{count}");
         sum += count;
     }
 
@@ -198,16 +183,3 @@ fn parse(input: &str) -> Result<Vec<(Vec<usize>, Vec<usize>)>, Err<VerboseError<
     ))(input)
     .map(|r| r.1)
 }
-
-/*
-for c in &line {
-                    print!(
-                        "{}",
-                        match c {
-                            0 => '.',
-                            1 => '#',
-                            _ => panic!("Ah!"),
-                        }
-                    );
-                }
-                println!(); */
