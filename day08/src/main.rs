@@ -18,6 +18,22 @@ fn main() {
     part2(input);
 }
 
+fn lcm(nums: &[u128]) -> u128 {
+    let mut lcm = nums[0];
+    for i in 1..nums.len() {
+        let mut a = lcm;
+        let mut b = nums[i];
+        while b != 0 {
+            let temp = b;
+            b = a % b;
+            a = temp;
+        }
+        lcm *= nums[i] / a;
+    }
+
+    lcm
+}
+
 fn part1(input: &str) {
     let (dirs, map) = parse(input).unwrap();
     let dirs = dirs.into_iter().cycle();
@@ -80,49 +96,15 @@ fn part2(input: &str) {
         count += 1;
     }
 
-    let mut cycles: Vec<_> = currs
+    let cycles: Vec<_> = currs
         .into_iter()
-        .map(|(_, zees, l)| {
+        .map(|(_, _, l)| {
             let l = l.unwrap();
-            let min = zees[&l.1];
-            let zees: Vec<_> = zees.into_values().filter(|&k| k >= min).collect();
-            (zees, l.0)
+            l.0
         })
         .collect();
 
-    let max = loop {
-        // println!("{cycles:?}");
-        let min = cycles
-            .iter()
-            .map(|(v, _)| *v.iter().min().unwrap())
-            .min()
-            .unwrap();
-
-        let mut val = 0;
-        for (vs, cycle) in &mut cycles {
-            for v in vs {
-                if *v == min {
-                    *v = *v + *cycle;
-                    val = *v;
-                }
-            }
-        }
-
-        let mut done = true;
-        for (vs, _) in &cycles {
-            let mut found = false;
-            for v in vs {
-                if *v == val {
-                    found = true;
-                }
-            }
-            done &= found;
-        }
-
-        if done {
-            break val;
-        }
-    };
+    let max = lcm(&cycles);
 
     println!("Count: {max}");
 }
