@@ -1,15 +1,13 @@
+use std::{collections::HashMap, ops::Div};
+
 use nom::{
-    bytes::complete::tag,
-    character::complete::{char, digit1},
-    combinator::map_res,
-    error::Error,
-    multi::separated_list1,
-    sequence::separated_pair,
+    branch::alt,
+    character::complete::{char, newline},
+    combinator::all_consuming,
+    error::VerboseError,
+    multi::{many1, separated_list1},
     Err,
 };
-use std::collections::HashMap;
-
-type Str = &'static str;
 
 fn main() {
     let input = include_str!("input.txt");
@@ -18,127 +16,120 @@ fn main() {
     part2(input);
 }
 
-fn part1(input: Str) {
-    let mut map = parse_input(input).unwrap();
-    let maxy = map.iter().map(|(k, _)| k.1).max().unwrap();
-    let mut count = 0;
+fn part1(input: &str) {
+    let mut platform = parse(input).unwrap();
+    let mut inds = vec![0; platform[0].len()];
+    let mut sum = 0;
 
-    'outer: loop {
-        let mut x = 500;
-        let mut y = 0;
-
-        loop {
-            if y > maxy {
-                break 'outer;
-            } else if let None = map.get(&(x, y + 1)) {
-                y += 1;
-            } else if let None = map.get(&(x - 1, y + 1)) {
-                x -= 1;
-                y += 1;
-            } else if let None = map.get(&(x + 1, y + 1)) {
-                x += 1;
-                y += 1;
-            } else {
-                break;
-            }
-        }
-
-        map.insert((x, y), Particle::Sand);
-        count += 1;
-    }
-
-    _print_map(&map);
-    dbg!(count);
-}
-
-fn part2(input: Str) {
-    let mut map = parse_input(input).unwrap();
-    let floor = map.iter().map(|(k, _)| k.1).max().unwrap() + 1;
-    let mut count = 0;
-
-    'outer: loop {
-        let mut x = 500;
-        let mut y = 0;
-        count += 1;
-
-        loop {
-            if y == floor {
-                break;
-            } else if let None = map.get(&(x, y + 1)) {
-                y += 1;
-            } else if let None = map.get(&(x - 1, y + 1)) {
-                x -= 1;
-                y += 1;
-            } else if let None = map.get(&(x + 1, y + 1)) {
-                x += 1;
-                y += 1;
-            } else {
-                if x == 500 && y == 0 {
-                    break 'outer;
+    for row in 0..platform.len() {
+        for col in 0..platform[row].len() {
+            match platform[row][col] {
+                '#' => inds[col] = row + 1,
+                'O' => {
+                    platform[row][col] = '.';
+                    platform[inds[col]][col] = 'O';
+                    sum += platform.len() - inds[col];
+                    inds[col] += 1;
                 }
-                break;
-            }
-        }
-
-        map.insert((x, y), Particle::Sand);
-    }
-
-    _print_map(&map);
-    dbg!(count);
-}
-
-type ParticleMap = HashMap<(isize, isize), Particle>;
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-enum Particle {
-    Rock,
-    Sand,
-}
-
-fn _print_map(map: &ParticleMap) {
-    let minx = map.iter().map(|(k, _)| k.0).min().unwrap() - 3;
-    let maxx = map.iter().map(|(k, _)| k.0).max().unwrap() + 3;
-    let miny = map.iter().map(|(k, _)| k.1).min().unwrap() - 3;
-    let maxy = map.iter().map(|(k, _)| k.1).max().unwrap() + 3;
-
-    for j in 0..maxy - miny {
-        for i in 0..maxx - minx {
-            match map.get(&(minx + i, miny + j)) {
-                Some(Particle::Rock) => print!("#"),
-                Some(Particle::Sand) => print!("o"),
-                None => print!("."),
-            }
-        }
-        println!();
-    }
-}
-
-fn parse_input(input: Str) -> Result<ParticleMap, Err<Error<Str>>> {
-    let (_, list) = separated_list1(
-        char('\n'),
-        separated_list1(
-            tag(" -> "),
-            separated_pair(
-                map_res(digit1, str::parse::<isize>),
-                char(','),
-                map_res(digit1, str::parse::<isize>),
-            ),
-        ),
-    )(input)?;
-
-    let mut map = HashMap::new();
-    for line in list {
-        for i in 0..line.len() - 1 {
-            let delx = line[i + 1].0 - line[i].0;
-            let dely = line[i + 1].1 - line[i].1;
-            for j in 0..=(delx + dely).abs() {
-                map.insert(
-                    (line[i].0 + j * delx.signum(), line[i].1 + j * dely.signum()),
-                    Particle::Rock,
-                );
+                _ => (),
             }
         }
     }
 
-    Ok(map)
+    // for row in platform {
+    //     for col in row {
+    //         print!("{col}");
+    //     }
+    //     println!();
+    // }
+
+    println!("Sum: {sum}");
+}
+
+fn part2(input: &str) {
+    let platform = parse(input).unwrap();
+    let num_rocks: usize = platform
+        .iter()
+        .map(|c| c.iter().filter(|r| **r == 'O').count())
+        .sum();
+    let mut rocks = vec![(0, 0); num_rocks];
+    let mut platforms = [platform.clone(), platform];
+    let mut ind = 0;
+    let mut hash = HashMap::new();
+    // let target = 6;
+    let target = 1_000_000_000;
+
+    let mut cycle = 0;
+    while cycle < target {
+        cycle += 1;
+
+        for _ in 0..4 {
+            let mut inds = vec![0; platforms[ind][0].len()];
+            let [platform, platform2] = if ind == 0 {
+                let [one, two] = &mut platforms;
+                [one, two]
+            } else {
+                let [one, two] = &mut platforms;
+                [two, one]
+            };
+            ind += 1;
+            ind %= 2;
+
+            let mut rock = 0;
+            for row in 0..platform.len() {
+                for col in 0..platform[row].len() {
+                    match platform[row][col] {
+                        '#' => inds[col] = row + 1,
+                        'O' => {
+                            platform[row][col] = '.';
+                            platform[inds[col]][col] = 'O';
+                            platform2[col][platform.len() - row - 1] = '.';
+                            platform2[col][platform.len() - inds[col] - 1] = 'O';
+
+                            rocks[rock] = (col, platform.len() - inds[col] - 1);
+                            rock += 1;
+
+                            inds[col] += 1;
+                        }
+                        _ => (),
+                    };
+                    platform2[col][platform.len() - row - 1] = platform[row][col];
+                }
+            }
+        }
+
+        if let Some(c) = hash.get(&rocks) {
+            // println!("{c} {cycle}");
+            cycle += (cycle - c) * (target - cycle - 1).div(cycle - c);
+        }
+        hash.insert(rocks.clone(), cycle);
+    }
+
+    let mut sum = 0;
+    for row in 0..platforms[ind].len() {
+        for col in 0..platforms[ind].len() {
+            match platforms[ind][row][col] {
+                'O' => {
+                    sum += platforms[ind].len() - row;
+                }
+                _ => (),
+            }
+        }
+    }
+
+    // for row in &platforms[ind] {
+    //     for col in row {
+    //         print!("{col}");
+    //     }
+    //     println!();
+    // }
+    println!("Sum: {sum}");
+}
+
+fn parse(input: &str) -> Result<Vec<Vec<char>>, Err<VerboseError<&str>>> {
+    all_consuming(separated_list1(
+        newline,
+        many1(alt((char('.'), char('#'), char('O')))),
+    ))(input)
+    .map(|r| r.1)
 }
