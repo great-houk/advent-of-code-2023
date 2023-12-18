@@ -1,5 +1,4 @@
 use nom::{
-    bytes::complete::{take, take_till},
     character::complete::{anychar, char},
     combinator::{all_consuming, map_res},
     error::VerboseError,

@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use nom::{
     branch::alt,
@@ -14,7 +14,7 @@ use nom::{
 fn main() {
     let input = include_str!("input.txt");
 
-    // part1(input);
+    part1(input);
     part2(input);
 }
 
@@ -79,7 +79,6 @@ fn part2(input: &str) {
 
         count += 1;
     }
-    println!("Cycles");
 
     let mut cycles: Vec<_> = currs
         .into_iter()

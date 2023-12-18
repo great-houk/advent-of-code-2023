@@ -1,9 +1,9 @@
 use nom::{
-    bytes::complete::{take_till, take_until},
+    bytes::complete::take_till,
     character::complete::{char, newline},
-    combinator::{all_consuming, map, map_res},
+    combinator::{all_consuming, map_res},
     error::VerboseError,
-    multi::{many1, separated_list1},
+    multi::separated_list1,
     Err,
 };
 

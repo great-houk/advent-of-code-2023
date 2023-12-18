@@ -1,11 +1,10 @@
 use nom::{
-    branch::alt,
-    bytes::complete::{take, take_till, take_till1},
-    character::complete::{char, digit1, newline},
-    combinator::{all_consuming, eof, map, map_res},
+    bytes::complete::take_till1,
+    character::complete::digit1,
+    combinator::{all_consuming, map, map_res},
     error::VerboseError,
-    multi::{count, many1},
-    sequence::{preceded, terminated, tuple},
+    multi::many1,
+    sequence::{preceded, tuple},
     Err,
 };
 
