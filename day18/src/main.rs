@@ -1,15 +1,17 @@
+use std::{
+    io::{stdout, Write},
+    process::Stdio,
+};
+
 use nom::{
-    character::complete::char,
-    character::complete::{digit1, newline},
-    combinator::{all_consuming, map_res},
-    error::Error,
+    bytes::complete::{tag, take},
+    character::complete::{anychar, char, digit1, line_ending, newline},
+    combinator::{all_consuming, map, map_res},
+    error::VerboseError,
     multi::separated_list1,
-    sequence::{terminated, tuple},
+    sequence::{preceded, terminated, tuple},
     Err,
 };
-use std::collections::{HashSet, VecDeque};
-
-type Str = &'static str;
 
 fn main() {
     let input = include_str!("sample.txt");
@@ -18,106 +20,114 @@ fn main() {
     part2(input);
 }
 
-fn part1(input: Str) {
-    let map = parse_input(input).unwrap();
-    let mut count = 0;
+fn part1(input: &str) {
+    let lines = parse(input).unwrap();
+    let mut flips = vec![];
+    let mut coords = (0, 0);
 
-    for (x, y, z) in &map {
-        let (x, y, z) = (*x, *y, *z);
-        // Check all sides
-        if !map.contains(&(x + 1, y, z)) {
-            count += 1;
-        }
-        if !map.contains(&(x - 1, y, z)) {
-            count += 1;
-        }
-        if !map.contains(&(x, y + 1, z)) {
-            count += 1;
-        }
-        if !map.contains(&(x, y - 1, z)) {
-            count += 1;
-        }
-        if !map.contains(&(x, y, z + 1)) {
-            count += 1;
-        }
-        if !map.contains(&(x, y, z - 1)) {
-            count += 1;
-        }
-    }
-
-    dbg!(count);
-}
-
-fn part2(input: Str) {
-    let map = parse_input(input).unwrap();
-    let minx = map.iter().map(|(x, _, _)| x).min().unwrap() - 1;
-    let maxx = map.iter().map(|(x, _, _)| x).max().unwrap() + 1;
-    let miny = map.iter().map(|(_, y, _)| y).min().unwrap() - 1;
-    let maxy = map.iter().map(|(_, y, _)| y).max().unwrap() + 1;
-    let minz = map.iter().map(|(_, _, z)| z).min().unwrap() - 1;
-    let maxz = map.iter().map(|(_, _, z)| z).max().unwrap() + 1;
-    let mut count = 0;
-
-    // Find all air squares outside the thing
-    let mut air = HashSet::new();
-    let mut moves = VecDeque::from([(minx, miny, minz)]);
-    while let Some((x, y, z)) = moves.pop_front() {
-        let diff = [
-            (-1, 0, 0),
-            (1, 0, 0),
-            (0, -1, 0),
-            (0, 1, 0),
-            (0, 0, -1),
-            (0, 0, 1),
-        ];
-        for (dx, dy, dz) in diff {
-            let (x, y, z) = (x + dx, y + dy, z + dz);
-            if x < minx || x > maxx || y < miny || y > maxy || z < minz || z > maxz {
-                continue;
+    for (dir, dist, _) in lines {
+        match dir {
+            Dir::Up => {
+                for _ in 0..dist {
+                    flips.push((coords, dir));
+                    coords.0 -= 1;
+                }
+                flips.push((coords, dir));
             }
-            if !map.contains(&(x, y, z)) && !air.contains(&(x, y, z)) {
-                air.insert((x, y, z));
-                moves.push_back((x, y, z));
+            Dir::Down => {
+                for _ in 0..dist {
+                    flips.push((coords, dir));
+                    coords.0 += 1;
+                }
+                flips.push((coords, dir));
+            }
+            Dir::Left => {
+                coords.1 -= dist;
+            }
+            Dir::Right => {
+                coords.1 += dist;
             }
         }
     }
 
-    // Find all squares bordering air
-    for (x, y, z) in &map {
-        let (x, y, z) = (*x, *y, *z);
-        // Check all sides
-        if air.contains(&(x + 1, y, z)) {
-            count += 1;
+    flips.sort();
+
+    let mut coords = (0, 0);
+    let max_x = *flips.iter().map(|((_, x), _)| x).max().unwrap();
+    let mut inside = false;
+    let mut ud = None;
+    let mut count = 0;
+
+    let mut print = |min, max, inside| {
+        for _ in min..max {
+            if inside {
+                count += 1;
+                print!("#")
+            } else {
+                print!(".")
+            }
         }
-        if air.contains(&(x - 1, y, z)) {
-            count += 1;
+        stdout().flush().unwrap();
+    };
+
+    for (flip, dir) in flips {
+        // Finish previous line
+        while coords.0 < flip.0 {
+            print(coords.1, max_x + 1, inside);
+            coords.0 += 1;
+            coords.1 = 0;
+            inside = false;
+            ud = None;
+            println!();
         }
-        if air.contains(&(x, y + 1, z)) {
-            count += 1;
-        }
-        if air.contains(&(x, y - 1, z)) {
-            count += 1;
-        }
-        if air.contains(&(x, y, z + 1)) {
-            count += 1;
-        }
-        if air.contains(&(x, y, z - 1)) {
-            count += 1;
+        // Draw to next flip
+        print(coords.1, flip.1, inside);
+        coords = flip;
+        // Determine next flip value
+        if let Some(d) = ud {
+            inside = d == dir;
+            ud = None;
+        } else {
+            inside = true;
+            ud = Some(dir);
         }
     }
+    println!();
 
-    dbg!(count);
+    println!("Count: {count}");
+}
+fn part2(input: &str) {}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Dir {
+    Up,
+    Down,
+    Left,
+    Right,
 }
 
-fn parse_input(input: Str) -> Result<HashSet<(isize, isize, isize)>, Err<Error<Str>>> {
-    let (_, v) = all_consuming(separated_list1(
-        newline,
+fn parse(input: &str) -> Result<Vec<(Dir, usize, u32)>, Err<VerboseError<&str>>> {
+    all_consuming(separated_list1(
+        line_ending,
         tuple((
-            terminated(map_res(digit1, str::parse), char(',')),
-            terminated(map_res(digit1, str::parse), char(',')),
-            map_res(digit1, str::parse),
+            map_res(anychar, |c| {
+                Ok(match c {
+                    'U' => Dir::Up,
+                    'D' => Dir::Down,
+                    'L' => Dir::Left,
+                    'R' => Dir::Right,
+                    _ => return Err(format!("Unexpected char {c}")),
+                })
+            }),
+            preceded(char(' '), map_res(digit1, str::parse)),
+            terminated(
+                preceded(
+                    tag(" (#"),
+                    map_res(take(6usize), |n| u32::from_str_radix(n, 16)),
+                ),
+                char(')'),
+            ),
         )),
-    ))(input)?;
-
-    Ok(HashSet::from_iter(v.into_iter()))
+    ))(input)
+    .map(|r| r.1)
 }
