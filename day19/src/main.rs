@@ -1,203 +1,230 @@
-#![feature(int_roundings)]
-use itertools::Itertools;
 use nom::{
-    bytes::complete::tag,
-    character::complete::{digit1, newline},
-    combinator::{all_consuming, map_res, opt},
-    error::Error,
-    multi::many1,
-    sequence::{preceded, terminated, tuple},
+    bytes::complete::{tag, take_till},
+    character::complete::{digit1, one_of},
+    combinator::{all_consuming, map, map_res},
+    error::VerboseError,
+    multi::{count, separated_list1},
+    sequence::{preceded, separated_pair, terminated, tuple},
     Err,
 };
-use std::{cmp::max, collections::VecDeque};
-
-type Str = &'static str;
+use std::collections::HashMap;
 
 fn main() {
-    let input = include_str!("sample.txt");
+    let input = include_str!("input.txt");
 
     part1(input);
     part2(input);
 }
 
-fn part1(input: Str) {
-    let blueprints = parse_input(input).unwrap();
-    let mut score = 0;
+#[derive(Debug, Clone)]
+struct InputRange {
+    mins: [usize; 4],
+    maxs: [usize; 4],
+}
 
-    for blueprint in blueprints.iter() {
-        let mut max_geodes = 0;
-        let mut moves = VecDeque::new();
-        let maxes = [0, 1, 2, 3].map(|i| blueprint.recipes.iter().map(|r| r[i]).max().unwrap());
-        moves.push_back(([1, 0, 0, 0], [0, 0, 0, 0], 0));
-        while let Some(m) = moves.pop_front() {
-            // Check validity
-            if max_geodes > (32 - m.2) * (32 - m.2 + m.0[3]) + m.1[3] {
-                continue;
+impl InputRange {
+    pub fn new() -> Self {
+        Self {
+            mins: [1; 4],
+            maxs: [4000; 4],
+        }
+    }
+
+    pub fn apply(&mut self, quality: char, rule: char, num: usize) {
+        let ind = match quality {
+            'x' => 0,
+            'm' => 1,
+            'a' => 2,
+            's' => 3,
+            _ => panic!("Invalid quality {quality}"),
+        };
+        if rule == '>' {
+            self.mins[ind] = (num + 1).max(self.mins[ind]);
+        } else if rule == '<' {
+            self.maxs[ind] = (num - 1).min(self.maxs[ind]);
+        } else {
+            panic!("Invalid rule {rule}");
+        }
+    }
+
+    pub fn apply_inverse(&mut self, quality: char, rule: char, num: usize) {
+        let ind = match quality {
+            'x' => 0,
+            'm' => 1,
+            'a' => 2,
+            's' => 3,
+            _ => panic!("Invalid quality {quality}"),
+        };
+        if rule == '>' {
+            self.maxs[ind] = num.min(self.maxs[ind]);
+        } else if rule == '<' {
+            self.mins[ind] = num.max(self.mins[ind]);
+        } else {
+            panic!("Invalid rule {rule}");
+        }
+    }
+
+    pub fn is_valid(&self) -> bool {
+        for i in 0..4 {
+            if self.mins[i] > self.maxs[i] {
+                return false;
             }
-            for (i, recipe) in blueprint.recipes.iter().enumerate() {
-                if (i == 3 || m.0[i] < maxes[i])
-                    && (recipe[0] == 0 || m.0[0] > 0)
-                    && (recipe[1] == 0 || m.0[1] > 0)
-                    && (recipe[2] == 0 || m.0[2] > 0)
-                    && (recipe[3] == 0 || m.0[3] > 0)
-                {
-                    // Calc wait
-                    let mut max_wait = 0;
-                    for i in 0..4 {
-                        if recipe[i] != 0 {
-                            max_wait = max(
-                                max_wait,
-                                (recipe[i].saturating_sub(m.1[i])).div_ceil(m.0[i]),
-                            );
-                        }
-                    }
-                    max_wait += 1;
-                    // Check if we are still in time
-                    if m.2 + max_wait < 24 {
-                        // Add resources
-                        let mut robots = m.0.clone();
-                        let mut ores = m.1.clone();
-                        ores[0] += robots[0] * max_wait;
-                        ores[1] += robots[1] * max_wait;
-                        ores[2] += robots[2] * max_wait;
-                        ores[3] += robots[3] * max_wait;
-                        // Remove recipe resources
-                        ores[0] -= recipe[0];
-                        ores[1] -= recipe[1];
-                        ores[2] -= recipe[2];
-                        ores[3] -= recipe[3];
-                        // Add robot
-                        robots[i] += 1;
-                        // Push move
-                        moves.push_back((robots, ores, m.2 + max_wait));
-                    } else {
-                        // We're done, and can just wait.
-                        // So count geodes and find max
-                        let remaining = 24 - m.2;
-                        let geodes = m.0[3] * remaining + m.1[3];
-                        max_geodes = max(max_geodes, geodes);
-                    }
+        }
+        true
+    }
+
+    pub fn combos(&self) -> usize {
+        let mut ret = 1;
+        for i in 0..4 {
+            ret *= self.maxs[i] - self.mins[i] + 1;
+        }
+        ret
+    }
+
+    pub fn check_part(&self, part: &[usize; 4]) -> bool {
+        for i in 0..4 {
+            if part[i] < self.mins[i] || part[i] > self.maxs[i] {
+                return false;
+            }
+        }
+        true
+    }
+}
+
+fn part1(input: &str) {
+    let (workflows, parts) = parse(input).unwrap();
+
+    let mut ranges = vec![("in", InputRange::new())];
+    let mut successes = vec![];
+
+    while let Some((name, mut range)) = ranges.pop() {
+        let (rules, end) = &workflows[name];
+
+        for (quality, rule, num, tag) in rules {
+            let mut r = range.clone();
+            r.apply(*quality, *rule, *num);
+            range.apply_inverse(*quality, *rule, *num);
+
+            if range.is_valid() {
+                match *tag {
+                    "A" => successes.push(r),
+                    "R" => (),
+                    _ => ranges.push((tag, r)),
                 }
             }
         }
-        // Mult score
-        score += blueprint.id * max_geodes;
-        // dbg!(blueprint.id, max_geodes);
+
+        if range.is_valid() {
+            match *end {
+                "A" => successes.push(range),
+                "R" => (),
+                _ => ranges.push((end, range)),
+            }
+        }
     }
 
-    dbg!(score);
+    let sum: usize = parts
+        .into_iter()
+        .filter(|p| {
+            for success in &successes {
+                if success.check_part(p) {
+                    return true;
+                }
+            }
+            false
+        })
+        .map(|p| p.iter().sum::<usize>())
+        .sum();
+
+    println!("Sum: {sum}");
 }
 
-fn part2(input: Str) {
-    let blueprints = parse_input(input).unwrap();
-    let blueprints = blueprints.into_iter().take(3).collect_vec();
-    let mut score = 1;
+fn part2(input: &str) {
+    let (workflows, _) = parse(input).unwrap();
 
-    for blueprint in blueprints.iter() {
-        let mut max_geodes = 0;
-        let mut moves = VecDeque::new();
-        let maxes = [0, 1, 2, 3].map(|i| blueprint.recipes.iter().map(|r| r[i]).max().unwrap());
-        moves.push_back(([1, 0, 0, 0], [0, 0, 0, 0], 0));
-        while let Some(m) = moves.pop_front() {
-            // Check validity
-            if max_geodes > (32 - m.2) * (32 - m.2 + m.0[3]) + m.1[3] {
-                continue;
-            }
-            for (i, recipe) in blueprint.recipes.iter().enumerate() {
-                if (i == 3 || m.0[i] < maxes[i])
-                    && (recipe[0] == 0 || m.0[0] > 0)
-                    && (recipe[1] == 0 || m.0[1] > 0)
-                    && (recipe[2] == 0 || m.0[2] > 0)
-                    && (recipe[3] == 0 || m.0[3] > 0)
-                {
-                    // Calc wait
-                    let mut max_wait = 0;
-                    for i in 0..4 {
-                        if recipe[i] != 0 {
-                            max_wait = max(
-                                max_wait,
-                                (recipe[i].saturating_sub(m.1[i])).div_ceil(m.0[i]),
-                            );
-                        }
-                    }
-                    max_wait += 1;
-                    // Check if we are still in time
-                    if m.2 + max_wait < 32 {
-                        // Add resources
-                        let mut robots = m.0.clone();
-                        let mut ores = m.1.clone();
-                        ores[0] += robots[0] * max_wait;
-                        ores[1] += robots[1] * max_wait;
-                        ores[2] += robots[2] * max_wait;
-                        ores[3] += robots[3] * max_wait;
-                        // Remove recipe resources
-                        ores[0] -= recipe[0];
-                        ores[1] -= recipe[1];
-                        ores[2] -= recipe[2];
-                        ores[3] -= recipe[3];
-                        // Add robot
-                        robots[i] += 1;
-                        // Push move
-                        moves.push_back((robots, ores, m.2 + max_wait));
-                    } else {
-                        // We're done, and can just wait.
-                        // So count geodes and find max
-                        let remaining = 32 - m.2;
-                        let geodes = m.0[3] * remaining + m.1[3];
-                        max_geodes = max(max_geodes, geodes);
-                    }
+    let mut ranges = vec![("in", InputRange::new())];
+    let mut successes = vec![];
+
+    while let Some((name, mut range)) = ranges.pop() {
+        let (rules, end) = &workflows[name];
+
+        for (quality, rule, num, tag) in rules {
+            let mut r = range.clone();
+            r.apply(*quality, *rule, *num);
+            range.apply_inverse(*quality, *rule, *num);
+
+            if range.is_valid() {
+                match *tag {
+                    "A" => successes.push(r),
+                    "R" => (),
+                    _ => ranges.push((tag, r)),
                 }
             }
         }
-        // Mult score
-        score *= max_geodes;
-        // dbg!(blueprint.id, max_geodes);
+
+        if range.is_valid() {
+            match *end {
+                "A" => successes.push(range),
+                "R" => (),
+                _ => ranges.push((end, range)),
+            }
+        }
     }
 
-    dbg!(score);
+    let sum: usize = successes.iter().map(|r| r.combos()).sum();
+
+    println!("Sum: {sum}");
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct Blueprint {
-    id: u16,
-    recipes: [[u16; 4]; 4],
-}
-
-fn parse_input(input: Str) -> Result<Vec<Blueprint>, Err<Error<Str>>> {
-    let (_, v) = all_consuming(many1(terminated(
-        tuple((
-            preceded(tag("Blueprint "), map_res(digit1, str::parse)),
-            preceded(tag(": Each ore robot costs "), map_res(digit1, str::parse)),
-            preceded(
-                tag(" ore. Each clay robot costs "),
-                map_res(digit1, str::parse),
+fn parse(
+    input: &str,
+) -> Result<
+    (
+        HashMap<&str, (Vec<(char, char, usize, &str)>, &str)>,
+        Vec<[usize; 4]>,
+    ),
+    Err<VerboseError<&str>>,
+> {
+    all_consuming(separated_pair(
+        map(
+            separated_list1(
+                tag("}\n"),
+                map(
+                    tuple((
+                        terminated(take_till(|c: char| c == '{'), tag("{")),
+                        separated_list1(
+                            tag(","),
+                            tuple((
+                                one_of("xmas"),
+                                one_of("<>"),
+                                map_res(digit1, str::parse),
+                                preceded(tag(":"), take_till(|c: char| c == ',')),
+                            )),
+                        ),
+                        preceded(tag(","), take_till(|c: char| c == '}')),
+                    )),
+                    |(name, rules, end)| (name, (rules, end)),
+                ),
             ),
-            preceded(
-                tag(" ore. Each obsidian robot costs "),
-                map_res(digit1, str::parse),
+            |v| v.into_iter().collect(),
+        ),
+        tag("}\n\n"),
+        terminated(
+            separated_list1(
+                tag("}\n"),
+                map(
+                    count(
+                        preceded(
+                            take_till(|c: char| c.is_numeric()),
+                            map_res(digit1, str::parse),
+                        ),
+                        4,
+                    ),
+                    |v| v.try_into().unwrap(),
+                ),
             ),
-            preceded(tag(" ore and "), map_res(digit1, str::parse)),
-            preceded(
-                tag(" clay. Each geode robot costs "),
-                map_res(digit1, str::parse),
-            ),
-            preceded(tag(" ore and "), map_res(digit1, str::parse)),
-        )),
-        tuple((tag(" obsidian."), opt(newline))),
-    )))(input)?;
-
-    let mut prints = Vec::with_capacity(v.len());
-    for (id, oco, cco, bco, bcc, gco, gcb) in v {
-        prints.push(Blueprint {
-            id,
-            recipes: [
-                [oco, 0, 0, 0],
-                [cco, 0, 0, 0],
-                [bco, bcc, 0, 0],
-                [gco, 0, gcb, 0],
-            ],
-        });
-    }
-
-    Ok(prints)
+            tag("}"),
+        ),
+    ))(input)
+    .map(|r| r.1)
 }

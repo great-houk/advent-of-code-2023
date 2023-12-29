@@ -79,5 +79,7 @@
 			"path": "day25"
 		},
 	],
-	"settings": {}
+	"settings": {
+		"files.eol": "\n"
+	}
 }
